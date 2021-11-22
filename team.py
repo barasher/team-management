@@ -1,5 +1,4 @@
 import datetime
-import json
 import csv
 import calendar
 
@@ -19,64 +18,46 @@ class Assignment:
         self.end = end
 
 
-class TeamProjPercent:
-
-    def __init__(self, agent_to_percent: dict):
-        self.proj_percentage_by_agent = agent_to_percent
-
-    def get_agent_project_percentage(self, agent: str):
-        try:
-            return self.proj_percentage_by_agent[agent]
-        except KeyError:
-            raise Exception("Can't find project percentage for agent {}".format(agent))
+class Team:
+    def __init__(self, h_dict: dict, pp_dict: dict):
+        self.h = h_dict
+        self.pp = pp_dict
 
     @staticmethod
     def load(f: str):
-        with open(f) as j:
-            data = json.load(j)
-        return TeamProjPercent(data)
-
-    @staticmethod
-    def empty():
-        return TeamProjPercent(dict())
-
-
-class Holidays:
-    def __init__(self, d: dict):
-        self.data = d
-
-    @staticmethod
-    def load(f: str):
-        d = dict()
+        h_dict = dict()
+        pp_dict = dict()
         with open(f) as j:
             r = csv.DictReader(j, delimiter=";")
             for line in r:
                 for k, v in line.items():
-                    if k != "Agent":
-                        d["{}_{}".format(line["Agent"], k)] = int(v)
-        return Holidays(d)
+                    if k != "Agent" and k != "ProjPercent":
+                        h_dict["{}_{}".format(line["Agent"], k)] = int(v) if v != "" else 0
+                pp_dict[line["Agent"]] = float(line["ProjPercent"])
+        return Team(h_dict, pp_dict)
 
     @staticmethod
     def empty():
-        return Holidays(dict())
+        return Team(dict(), dict())
 
-    def get(self, who: str, month: str):
-        try:
-            return self.data["{}_{}".format(who, month)]
-        except KeyError:
-            return 0
+    def get_holidays(self, who: str, month: str):
+        return self.h["{}_{}".format(who, month)]
 
+    def get_project_percent(self, who: str):
+        return self.pp[who]
+
+    def exists(self, who:str):
+        return who in self.pp
 
 class Manager:
 
-    def __init__(self, start: datetime.date, end: datetime.date, tpp: TeamProjPercent, h: Holidays):
+    def __init__(self, start: datetime.date, end: datetime.date, t: Team):
         self.start = start
         self.end = end
         self.projects = dict()
         self.agents_by_project_and_date = dict()  # projId -> day -> list<agents>
         self.assignment_count_by_day_and_agent = dict()  # projId_YYYYMMDD -> count
-        self.team_proj_percent = tpp
-        self.holidays = h
+        self.holidays = t
 
     def add_project(self, p):
         self.projects[p.id] = p
@@ -132,8 +113,8 @@ class Manager:
                     val = 0
 
                 for agent in self.get_agents(proj_id, day):
-                    worked_days = opened_days_in_month(day_key) - self.holidays.get(agent, day_key)
-                    worked_days_on_project = worked_days * self.team_proj_percent.get_agent_project_percentage(agent)
+                    worked_days = opened_days_in_month(day_key) - self.holidays.get_holidays(agent, day_key)
+                    worked_days_on_project = worked_days * self.holidays.get_project_percent(agent)
                     worked_days_on_project_per_opened_day = worked_days_on_project / opened_days_in_month(day_key)
                     to_add = worked_days_on_project_per_opened_day / self.get_assignment_count(agent, day)
                     val += to_add
@@ -142,7 +123,7 @@ class Manager:
 
             d = {}
             for m, c in proj_report.items():
-                d[m]=round(c, 2)
+                d[m] = round(c, 2)
             summary[proj.name] = d
         return summary
 
@@ -169,5 +150,3 @@ def opened_days_in_month(ym: str):
         if datetime.date(y, m, i).weekday() <= 4:
             tot += 1
     return tot
-
-# fixme : test summary
